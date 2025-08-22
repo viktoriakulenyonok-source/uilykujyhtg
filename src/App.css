@@ -1,0 +1,60 @@
+.App {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+}
+
+/* Frame styles based on the provided CSS */
+.frame-2136141721 {
+  position: relative;
+  width: 268px;
+  height: 126px;
+  left: 500px;
+  top: 214px;
+  background: #FFFFFF;
+}
+
+.frame-2136141785 {
+  position: relative;
+  width: 268px;
+  height: 126px;
+  left: 490px;
+  top: 477px;
+  background: #FFFFFF;
+}
+
+/* Arrow styles */
+.arrow-42 {
+  box-sizing: border-box;
+  position: absolute;
+  width: 171px;
+  height: 0px;
+  left: 768px;
+  top: 257px;
+  border: 2px solid #FF0000;
+}
+
+.arrow-83 {
+  box-sizing: border-box;
+  position: absolute;
+  width: 664px;
+  height: 0px;
+  left: 758px;
+  top: 520px;
+  border: 2px solid #FF0000;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .frame-2136141721,
+  .frame-2136141785 {
+    width: 100%;
+    max-width: 268px;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+  
+  .arrow-42,
+  .arrow-83 {
+    display: none;
+  }
+}
