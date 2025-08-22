@@ -1,0 +1,2467 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Layout Renderer</title>
+  <style>
+    /* Page base */
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica Neue, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      background: #0d0f14;
+      color: #e6e6e6;
+      overflow: hidden;
+    }
+
+    /* Top control bar */
+    .toolbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 16px;
+      background: rgba(18, 20, 28, 0.92);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      z-index: 10;
+      backdrop-filter: blur(8px);
+    }
+
+    .toolbar .group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .toolbar label {
+      font-size: 12px;
+      color: #b9c0d4;
+    }
+
+    .toolbar input[type="range"] {
+      width: 200px;
+    }
+
+    .toolbar button {
+      height: 32px;
+      padding: 0 12px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: #1a1f2b;
+      color: #e6e6e6;
+      cursor: pointer;
+    }
+
+    .toolbar button:hover {
+      background: #21283a;
+    }
+
+    .toolbar textarea {
+      width: 520px;
+      height: 32px;
+      resize: vertical;
+      min-height: 32px;
+      max-height: 240px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.1);
+      background: #0f1320;
+      color: #dfe3ec;
+      padding: 6px 10px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    /* Scroll area */
+    .stage-wrap {
+      position: absolute;
+      top: 56px;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      overflow: auto;
+      background: #0d0f14;
+    }
+
+    /* Infinite-ish grid background */
+    .stage {
+      position: relative;
+      width: 5200px; /* can be expanded from UI */
+      height: 20000px;
+      margin: 0;
+      transform-origin: 0 0;
+      background-image:
+        linear-gradient(#11151d 1px, transparent 1px),
+        linear-gradient(90deg, #11151d 1px, transparent 1px),
+        linear-gradient(#0e1220 1px, transparent 1px),
+        linear-gradient(90deg, #0e1220 1px, transparent 1px);
+      background-size: 40px 40px, 40px 40px, 200px 200px, 200px 200px;
+      background-position: 0 0, 0 0, -1px -1px, -1px -1px;
+    }
+
+    /* Rendered blocks */
+    .node {
+      position: absolute;
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+
+    .node.frame {
+      /* Optional subtle outline for white boxes on dark grid */
+      outline: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 2px;
+    }
+
+    .node.text {
+      color: #f0f0f0;
+      white-space: pre-wrap;
+    }
+
+    .node.arrow {
+      /* We draw arrows/lines as 0-height boxes with border-top */
+      height: 0 !important;
+      border: none;
+      overflow: visible;
+    }
+
+    .node.arrow .line {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      border-top: 2px solid #ff0000; /* default; will be overridden */
+      transform-origin: 0 0;
+    }
+
+    .legend {
+      position: absolute;
+      top: 4px;
+      left: 6px;
+      font-size: 10px;
+      line-height: 1;
+      color: rgba(0,0,0,0.6);
+      background: rgba(255,255,255,0.7);
+      border-radius: 3px;
+      padding: 2px 4px;
+      pointer-events: none;
+      user-select: none;
+    }
+
+    .legend.dark {
+      color: rgba(255,255,255,0.8);
+      background: rgba(0,0,0,0.45);
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <div class="group">
+      <label for="zoom">Масштаб</label>
+      <input id="zoom" type="range" min="0.25" max="2" value="0.6" step="0.05" />
+      <button id="fitWidth">Подогнать по ширине</button>
+      <button id="clear">Очистить</button>
+    </div>
+    <div class="group" style="margin-left:auto;">
+      <label for="spec">Спецификация</label>
+      <textarea id="spec" placeholder="Вставьте сюда блоки со свойствами..." spellcheck="false"></textarea>
+      <button id="render">Отрисовать</button>
+    </div>
+  </div>
+
+  <div class="stage-wrap" id="stageWrap">
+    <div class="stage" id="stage"></div>
+  </div>
+
+  <script>
+    const stage = document.getElementById('stage');
+    const stageWrap = document.getElementById('stageWrap');
+    const zoomInput = document.getElementById('zoom');
+    const fitWidthBtn = document.getElementById('fitWidth');
+    const clearBtn = document.getElementById('clear');
+    const renderBtn = document.getElementById('render');
+    const specInput = document.getElementById('spec');
+
+    function pxToNumber(value) {
+      if (typeof value !== 'string') return value;
+      const n = parseFloat(value.replace('px', '').trim());
+      return Number.isFinite(n) ? n : 0;
+    }
+
+    function parseBorder(value) {
+      // Example: "2px solid #FF0000"
+      if (!value) return null;
+      const parts = value.trim().split(/\s+/);
+      if (parts.length < 3) return null;
+      return {
+        width: pxToNumber(parts[0]),
+        style: parts[1],
+        color: parts[2]
+      };
+    }
+
+    function parseTransform(value) {
+      if (!value) return null;
+      const v = value.trim();
+      if (v.startsWith('rotate(')) {
+        const angle = parseFloat(v.slice(7)); // drop 'rotate('
+        return { type: 'rotate', angle };
+      }
+      if (v.startsWith('matrix(')) {
+        const inside = v.slice(7, -1);
+        const nums = inside.split(',').map(s => parseFloat(s.trim()));
+        if (nums.length === 6) {
+          return { type: 'matrix', a: nums[0], b: nums[1], c: nums[2], d: nums[3], e: nums[4], f: nums[5] };
+        }
+      }
+      return { type: 'raw', value: v };
+    }
+
+    function parseBlocks(spec) {
+      const blocks = [];
+      const re = /\/\*([\s\S]*?)\*\/([\s\S]*?)(?=\/\*|$)/g;
+      let match;
+      while ((match = re.exec(spec)) !== null) {
+        const name = match[1].trim();
+        const body = match[2];
+        const lines = body.split(/\n|\r/).map(l => l.trim()).filter(Boolean);
+        const props = {};
+        for (const line of lines) {
+          const m = line.match(/^([a-zA-Z\-]+)\s*:\s*([^;]+);?$/);
+          if (m) {
+            const key = m[1].trim();
+            const val = m[2].trim();
+            props[key] = val;
+          }
+        }
+        blocks.push({ name, props });
+      }
+      return blocks;
+    }
+
+    function classifyBlock(block) {
+      const n = block.name.toLowerCase();
+      const p = block.props;
+      if (n.startsWith('arrow') || p['border'] && pxToNumber(p['height']) === 0) return 'arrow';
+      if (p['font-family'] || p['font-size'] || p['color']) return 'text';
+      return 'frame';
+    }
+
+    function applyPositionAndSize(el, props) {
+      el.style.position = 'absolute';
+      if (props.left) el.style.left = pxToNumber(props.left) + 'px';
+      if (props.top) el.style.top = pxToNumber(props.top) + 'px';
+      if (props.width) el.style.width = pxToNumber(props.width) + 'px';
+      if (props.height) el.style.height = pxToNumber(props.height) + 'px';
+      // background
+      if (props.background) el.style.background = props.background;
+    }
+
+    function renderFrame(block) {
+      const el = document.createElement('div');
+      el.className = 'node frame';
+      applyPositionAndSize(el, block.props);
+
+      // Show a tiny corner legend with the name for orientation
+      const bg = (block.props.background || '').toLowerCase();
+      const legend = document.createElement('div');
+      legend.className = 'legend' + (bg.includes('#000') ? ' dark' : '');
+      legend.textContent = block.name;
+      el.appendChild(legend);
+
+      stage.appendChild(el);
+    }
+
+    function renderText(block) {
+      const el = document.createElement('div');
+      el.className = 'node text';
+      applyPositionAndSize(el, block.props);
+
+      // Typography
+      if (block.props['font-family']) el.style.fontFamily = block.props['font-family'].replace(/'^|'$/g, '');
+      if (block.props['font-style']) el.style.fontStyle = block.props['font-style'];
+      if (block.props['font-weight']) el.style.fontWeight = block.props['font-weight'];
+      if (block.props['font-size']) el.style.fontSize = pxToNumber(block.props['font-size']) + 'px';
+      if (block.props['line-height']) el.style.lineHeight = block.props['line-height'];
+      if (block.props['color']) el.style.color = block.props['color'];
+
+      el.textContent = block.name;
+      stage.appendChild(el);
+    }
+
+    function renderArrow(block) {
+      // Represent arrow/line as a container with a child .line that uses border-top
+      const el = document.createElement('div');
+      el.className = 'node arrow';
+      applyPositionAndSize(el, block.props);
+
+      const line = document.createElement('div');
+      line.className = 'line';
+
+      // width from props
+      const widthPx = pxToNumber(block.props['width']) || 0;
+      line.style.width = widthPx + 'px';
+
+      // border
+      const border = parseBorder(block.props['border']);
+      if (border) {
+        line.style.borderTop = `${border.width}px ${border.style} ${border.color}`;
+      }
+
+      // transforms
+      const t = parseTransform(block.props['transform']);
+      if (t) {
+        if (t.type === 'rotate') {
+          el.style.transform = `rotate(${t.angle}deg)`;
+        } else if (t.type === 'matrix') {
+          el.style.transform = `matrix(${t.a}, ${t.b}, ${t.c}, ${t.d}, ${t.e}, ${t.f})`;
+        } else if (t.type === 'raw') {
+          el.style.transform = t.value;
+        }
+      }
+
+      el.appendChild(line);
+      stage.appendChild(el);
+    }
+
+    function renderBlocks(blocks) {
+      stage.innerHTML = '';
+      for (const block of blocks) {
+        const type = classifyBlock(block);
+        if (type === 'arrow') renderArrow(block);
+        else if (type === 'text') renderText(block);
+        else renderFrame(block);
+      }
+    }
+
+    function setZoom(z) {
+      const zoom = Math.max(0.1, Math.min(3, z));
+      stage.style.transform = `scale(${zoom})`;
+    }
+
+    function fitToWidth() {
+      const visibleWidth = stageWrap.clientWidth - 32; // account for padding/scrollbar
+      const scale = visibleWidth / stage.clientWidth;
+      setZoom(Math.max(0.1, Math.min(3, scale)));
+    }
+
+    function onRenderClick() {
+      const spec = specInput.value.trim();
+      const blocks = parseBlocks(spec);
+      renderBlocks(blocks);
+    }
+
+    zoomInput.addEventListener('input', (e) => setZoom(parseFloat(e.target.value)));
+    fitWidthBtn.addEventListener('click', () => fitToWidth());
+    clearBtn.addEventListener('click', () => { stage.innerHTML = ''; });
+    renderBtn.addEventListener('click', onRenderClick);
+
+    // Default spec loaded from provided data
+    const defaultSpec = `/* Frame 2136141721 */
+
+position: relative;
+width: 268px;
+height: 126px;
+left: 500px;
+top: 214px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141785 */
+
+position: relative;
+width: 268px;
+height: 126px;
+left: 490px;
+top: 477px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141867 */
+
+position: relative;
+width: 268px;
+height: 43px;
+left: 191px;
+top: 1115px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141871 */
+
+position: relative;
+width: 268px;
+height: 60px;
+left: 309px;
+top: 2273px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141869 */
+
+position: relative;
+width: 268px;
+height: 43px;
+left: 191px;
+top: 1022px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141872 */
+
+position: relative;
+width: 268px;
+height: 55px;
+left: 2794px;
+top: 971px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141873 */
+
+position: relative;
+width: 268px;
+height: 55px;
+left: 2678px;
+top: 156px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141870 */
+
+position: relative;
+width: 268px;
+height: 43px;
+left: 191px;
+top: 942px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141868 */
+
+position: relative;
+width: 279px;
+height: 56px;
+left: 1013px;
+top: 1279px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141724 */
+
+position: relative;
+width: 274px;
+height: 227px;
+left: 541px;
+top: 2791px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141725 */
+
+position: relative;
+width: 268px;
+height: 48px;
+left: 541px;
+top: 3226px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141857 */
+
+position: relative;
+width: 268px;
+height: 57px;
+left: 541px;
+top: 3078px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141825 */
+
+position: relative;
+width: 268px;
+height: 116px;
+left: 554px;
+top: 3425px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141827 */
+
+position: relative;
+width: 268px;
+height: 74px;
+left: 554px;
+top: 3664px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141861 */
+
+position: relative;
+width: 268px;
+height: 74px;
+left: 554px;
+top: 4270px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141829 */
+
+position: relative;
+width: 268px;
+height: 74px;
+left: 493px;
+top: 5144px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141830 */
+
+position: relative;
+width: 268px;
+height: 74px;
+left: 498px;
+top: 6209px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141831 */
+
+position: relative;
+width: 268px;
+height: 74px;
+left: 493px;
+top: 7440px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141832 */
+
+position: relative;
+width: 268px;
+height: 74px;
+left: 4181px;
+top: 7664px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141835 */
+
+position: relative;
+width: 268px;
+height: 88px;
+left: 4181px;
+top: 8728px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141842 */
+
+position: relative;
+width: 268px;
+height: 74px;
+left: 4181px;
+top: 9051px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141836 */
+
+position: relative;
+width: 268px;
+height: 74px;
+left: 3051px;
+top: 8557px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141834 */
+
+position: relative;
+width: 268px;
+height: 74px;
+left: 4181px;
+top: 7471px;
+
+background: #FFFFFF;
+
+
+/* Arrow 42 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 171px;
+height: 0px;
+left: 768px;
+top: 257px;
+
+border: 2px solid #FF0000;
+
+
+/* Авторизация */
+
+position: relative;
+width: 1366px;
+height: 1082px;
+left: 939px;
+top: 148px;
+
+
+
+/* Банк заданий */
+
+position: relative;
+width: 1366px;
+height: 768px;
+left: 939px;
+top: 1495px;
+
+
+
+/* Frame 2136140146 */
+
+position: relative;
+width: 1366px;
+height: 314px;
+left: 939px;
+top: 2273px;
+
+
+
+/* Авторизация */
+
+position: relative;
+width: 1366px;
+height: 1082px;
+left: 2517px;
+top: 1417px;
+
+
+
+/* Arrow 83 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 664px;
+height: 0px;
+left: 758px;
+top: 520px;
+
+border: 2px solid #FF0000;
+
+
+/* Arrow 136 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 554px;
+height: 0px;
+left: 459px;
+top: 1158px;
+
+border: 2px solid #FF0000;
+
+
+/* Arrow 140 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 1115px;
+height: 0px;
+left: 382px;
+top: 1158px;
+
+border: 2px solid #FF0000;
+transform: rotate(90deg);
+
+
+/* Arrow 141 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 482px;
+height: 0px;
+left: 577px;
+top: 2303px;
+
+border: 2px solid #FF0000;
+
+
+/* Arrow 138 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 554px;
+height: 0px;
+left: 459px;
+top: 1065px;
+
+border: 2px solid #FF0000;
+
+
+/* Arrow 142 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 554px;
+height: 0px;
+left: 2240px;
+top: 992px;
+
+border: 2px solid #FF0000;
+transform: matrix(-1, 0, 0, 1, 0, 0);
+
+
+/* Arrow 139 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 554px;
+height: 0px;
+left: 459px;
+top: 985px;
+
+border: 2px solid #FF0000;
+
+
+/* Arrow 143 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 386px;
+height: 0px;
+left: 2292px;
+top: 183px;
+
+border: 2px solid #FF0000;
+transform: rotate(-180deg);
+
+
+/* Arrow 137 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 121px;
+height: 0px;
+left: 1153px;
+top: 1158px;
+
+border: 2px solid #FF0000;
+transform: rotate(-90deg);
+
+
+/* Мои задания */
+
+position: relative;
+width: 1366px;
+height: 1083px;
+left: 939px;
+top: 2723px;
+
+
+
+/* Мои задания */
+
+position: relative;
+width: 1366px;
+height: 768px;
+left: 2633px;
+top: 4660px;
+
+
+
+/* Мои задания */
+
+position: relative;
+width: 1366px;
+height: 768px;
+left: 2633px;
+top: 10155px;
+
+
+
+/* Мои задания */
+
+position: relative;
+width: 1366px;
+height: 768px;
+left: 943px;
+top: 4865px;
+
+
+
+/* Мои задания */
+
+position: relative;
+width: 1366px;
+height: 1172px;
+left: 948px;
+top: 5783px;
+
+
+
+/* Мои задания */
+
+position: relative;
+width: 1366px;
+height: 610px;
+left: 2633px;
+top: 2723px;
+
+
+
+/* Мои задания */
+
+position: relative;
+width: 1366px;
+height: 610px;
+left: 2633px;
+top: 3501px;
+
+
+
+/* Мои задания */
+
+position: relative;
+width: 1366px;
+height: 610px;
+left: 939px;
+top: 3965px;
+
+
+
+/* Arrow 45 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 512px;
+height: 0px;
+left: 814.99px;
+top: 2986px;
+
+border: 2px solid #FF0000;
+
+
+/* Frame 2136141786 */
+
+position: relative;
+width: 268px;
+height: 352px;
+left: 4120px;
+top: 2832px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141821 */
+
+position: relative;
+width: 268px;
+height: 117px;
+left: 4468px;
+top: 3856px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141822 */
+
+position: relative;
+width: 268px;
+height: 117px;
+left: 4722px;
+top: 4124px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141824 */
+
+position: relative;
+width: 268px;
+height: 117px;
+left: 6627px;
+top: 3797px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141823 */
+
+position: relative;
+width: 268px;
+height: 117px;
+left: 4509px;
+top: 5259px;
+
+background: #FFFFFF;
+
+
+/* Arrow 84 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 878px;
+height: 0px;
+left: 3240px;
+top: 2963px;
+
+border: 2px solid #FF0000;
+transform: rotate(-180deg);
+
+
+/* Arrow 85 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 861px;
+height: 0px;
+left: 3607px;
+top: 3965px;
+
+border: 2px solid #FF0000;
+
+
+/* Arrow 86 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 325px;
+height: 0px;
+left: 4602px;
+top: 3973px;
+
+border: 2px solid #FF0000;
+transform: rotate(90deg);
+
+
+/* Arrow 49 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 585px;
+height: 0px;
+left: 809.03px;
+top: 3250px;
+
+border: 2px solid #FF0000;
+
+
+/* Arrow 127 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 981px;
+height: 0px;
+left: 809px;
+top: 3102px;
+
+border: 2px solid #FF0000;
+
+
+/* Arrow 90 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 585px;
+height: 0px;
+left: 822.03px;
+top: 3449px;
+
+border: 2px solid #FF0000;
+
+
+/* Arrow 93 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 585px;
+height: 0px;
+left: 822px;
+top: 3730px;
+
+border: 2px solid #FF0000;
+
+
+/* Arrow 130 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 458px;
+height: 0px;
+left: 822px;
+top: 4336px;
+
+border: 2px solid #FF0000;
+
+
+/* Arrow 94 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 182px;
+height: 0px;
+left: 761px;
+top: 5210px;
+
+border: 2px solid #FF0000;
+
+
+/* Arrow 95 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 182px;
+height: 0px;
+left: 766px;
+top: 6275px;
+
+border: 2px solid #FF0000;
+
+
+/* Arrow 96 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 182px;
+height: 0px;
+left: 761px;
+top: 7506px;
+
+border: 2px solid #FF0000;
+
+
+/* Arrow 97 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 182px;
+height: 0px;
+left: 3999px;
+top: 7709px;
+
+border: 2px solid #FF0000;
+transform: matrix(-1, 0, 0, 1, 0, 0);
+
+
+/* Arrow 100 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 182px;
+height: 0px;
+left: 3999px;
+top: 8787px;
+
+border: 2px solid #FF0000;
+transform: matrix(-1, 0, 0, 1, 0, 0);
+
+
+/* Arrow 109 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 182px;
+height: 0px;
+left: 3999px;
+top: 9096px;
+
+border: 2px solid #FF0000;
+transform: matrix(-1, 0, 0, 1, 0, 0);
+
+
+/* Arrow 99 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 182px;
+height: 0px;
+left: 3999px;
+top: 7516px;
+
+border: 2px solid #FF0000;
+transform: matrix(-1, 0, 0, 1, 0, 0);
+
+
+/* Frame 2136141826 */
+
+position: relative;
+width: 268px;
+height: 127px;
+left: 3103px;
+top: 4279px;
+
+background: #FFFFFF;
+
+
+/* Arrow 91 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 265px;
+height: 0px;
+left: 3163px;
+top: 4014px;
+
+border: 2px solid #FF0000;
+transform: rotate(-90deg);
+
+
+/* Arrow 92 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 265px;
+height: 0px;
+left: 3163px;
+top: 4395px;
+
+border: 2px solid #FF0000;
+transform: matrix(0, 1, 1, 0, 0, 0);
+
+
+/* Хотите отказаться? */
+
+position: relative;
+width: 1366px;
+height: 768px;
+left: 4328px;
+top: 4298px;
+
+
+
+/* Возвращено в банк */
+
+position: relative;
+width: 1366px;
+height: 768px;
+left: 4972px;
+top: 3343px;
+
+
+
+/* Возвращено в банк */
+
+position: relative;
+width: 1366px;
+height: 768px;
+left: 4972px;
+top: 3343px;
+
+
+
+/* Arrow 88 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 472px;
+height: 0px;
+left: 4855px;
+top: 4241px;
+
+border: 2px solid #FF0000;
+transform: rotate(90deg);
+
+
+/* Arrow 148 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 908px;
+height: 0px;
+left: 5270px;
+top: 3805px;
+
+border: 2px solid #FF0000;
+transform: rotate(-90deg);
+
+
+/* Arrow 89 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 665px;
+height: 0px;
+left: 4642.99px;
+top: 4594px;
+
+border: 2px solid #FF0000;
+transform: rotate(-90deg);
+
+
+/* Arrow 87 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 289px;
+height: 0px;
+left: 6338px;
+top: 3856px;
+
+border: 2px solid #FF0000;
+transform: rotate(180deg);
+
+
+/* Мои задания */
+
+position: relative;
+width: 1366px;
+height: 1320px;
+left: 948px;
+top: 7159px;
+
+
+
+/* Frame 2136141833 */
+
+position: relative;
+width: 241px;
+height: 130px;
+left: 522px;
+top: 8308px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141839 */
+
+position: relative;
+width: 241px;
+height: 79px;
+left: 530px;
+top: 7954px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141840 */
+
+position: relative;
+width: 241px;
+height: 79px;
+left: 530px;
+top: 8082px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141841 */
+
+position: relative;
+width: 241px;
+height: 79px;
+left: 4449px;
+top: 8065px;
+
+background: #FFFFFF;
+
+
+/* Мои задания */
+
+position: relative;
+width: 1366px;
+height: 1320px;
+left: 2633px;
+top: 7159px;
+
+
+
+/* Arrow 98 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 1014px;
+height: 0px;
+left: 762px;
+top: 8382px;
+
+border: 2px solid #FF0000;
+
+
+/* Arrow 106 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 639px;
+height: 0px;
+left: 770px;
+top: 8028px;
+
+border: 2px solid #FF0000;
+
+
+/* Arrow 107 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 710px;
+height: 0px;
+left: 771px;
+top: 8104px;
+
+border: 2px solid #FF0000;
+
+
+/* Arrow 108 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 682px;
+height: 0px;
+left: 3767px;
+top: 8103px;
+
+border: 2px solid #FF0000;
+transform: rotate(-179.92deg);
+
+
+/* Мои задания */
+
+position: relative;
+width: 1366px;
+height: 1320px;
+left: 2633px;
+top: 8683px;
+
+
+
+/* Frame 2136141837 */
+
+position: relative;
+width: 268px;
+height: 86px;
+left: 4059px;
+top: 9776px;
+
+background: #FFFFFF;
+
+
+/* Arrow 102 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 350px;
+height: 0px;
+left: 3709px;
+top: 9819px;
+
+border: 2px solid #FF0000;
+transform: rotate(180deg);
+
+
+/* Arrow 103 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 350px;
+height: 0px;
+left: 4107px;
+top: 9862px;
+
+border: 2px solid #FF0000;
+transform: rotate(90deg);
+
+
+/* Arrow 104 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 108px;
+height: 0px;
+left: 3999px;
+top: 10212px;
+
+border: 2px solid #FF0000;
+transform: rotate(180deg);
+
+
+/* Мои задания */
+
+position: relative;
+width: 1366px;
+height: 1320px;
+left: 884px;
+top: 8683px;
+
+
+
+/* Frame 2136141838 */
+
+position: relative;
+width: 268px;
+height: 74px;
+left: 1267px;
+top: 8571px;
+
+background: #FFFFFF;
+
+
+/* Arrow 105 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 182px;
+height: 0px;
+left: 1352px;
+top: 8645px;
+
+border: 2px solid #FF0000;
+transform: matrix(0, 1, 1, 0, 0, 0);
+
+
+/* Банк заданий */
+
+position: relative;
+width: 1366px;
+height: 768px;
+left: 884px;
+top: 10155px;
+
+
+
+/* Frame 2136141843 */
+
+position: relative;
+width: 241px;
+height: 79px;
+left: 402px;
+top: 9460px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141844 */
+
+position: relative;
+width: 241px;
+height: 351px;
+left: 442px;
+top: 10358px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141845 */
+
+position: relative;
+width: 241px;
+height: 40px;
+left: 442px;
+top: 10779px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141846 */
+
+position: relative;
+width: 259px;
+height: 64px;
+left: 442px;
+top: 10848px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141860 */
+
+position: relative;
+width: 259px;
+height: 64px;
+left: 438px;
+top: 11706px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141847 */
+
+position: relative;
+width: 278px;
+height: 64px;
+left: 442px;
+top: 12480px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141853 */
+
+position: relative;
+width: 278px;
+height: 342px;
+left: 442px;
+top: 13260px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141854 */
+
+position: relative;
+width: 278px;
+height: 90px;
+left: 442px;
+top: 13686px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141855 */
+
+position: relative;
+width: 278px;
+height: 64px;
+left: 442px;
+top: 13927px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141879 */
+
+position: relative;
+width: 206px;
+height: 66px;
+left: 361px;
+top: 14589px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141859 */
+
+position: relative;
+width: 278px;
+height: 64px;
+left: 460px;
+top: 16013px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141880 */
+
+position: relative;
+width: 278px;
+height: 64px;
+left: 460px;
+top: 15602px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141881 */
+
+position: relative;
+width: 278px;
+height: 64px;
+left: 465px;
+top: 15786px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141862 */
+
+position: relative;
+width: 278px;
+height: 88px;
+left: 4134px;
+top: 16023px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141856 */
+
+position: relative;
+width: 278px;
+height: 64px;
+left: 442px;
+top: 13817px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141848 */
+
+position: relative;
+width: 213px;
+height: 64px;
+left: 442px;
+top: 12627px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141849 */
+
+position: relative;
+width: 213px;
+height: 64px;
+left: 4063px;
+top: 12826px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141850 */
+
+position: relative;
+width: 213px;
+height: 64px;
+left: 4283px;
+top: 13558px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141851 */
+
+position: relative;
+width: 206px;
+height: 118px;
+left: 4283px;
+top: 13656px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141852 */
+
+position: relative;
+width: 206px;
+height: 118px;
+left: 4283px;
+top: 13845px;
+
+background: #FFFFFF;
+
+
+/* Arrow 110 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 502px;
+height: 0px;
+left: 643px;
+top: 9499px;
+
+border: 2px solid #FF0000;
+
+
+/* Arrow 111 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 576px;
+height: 0px;
+left: 683px;
+top: 10397px;
+
+border: 2px solid #FF0000;
+
+
+/* Arrow 112 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 576px;
+height: 0px;
+left: 683px;
+top: 10810px;
+
+border: 2px solid #FF0000;
+
+
+/* Arrow 113 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 619px;
+height: 0px;
+left: 701px;
+top: 10885px;
+
+border: 2px solid #FF0000;
+
+
+/* Задание из банка */
+
+position: relative;
+width: 1366px;
+height: 768px;
+left: 880px;
+top: 12234px;
+
+
+
+/* Банк заданий */
+
+position: relative;
+width: 1366px;
+height: 768px;
+left: 2632px;
+top: 12234px;
+
+
+
+/* Frame 43 */
+
+/* Auto layout */
+display: flex;
+flex-direction: row;
+justify-content: space-between;
+align-items: flex-end;
+padding: 0px;
+gap: 523px;
+
+position: relative;
+width: 791px;
+height: 19px;
+left: 1188px;
+top: 12493px;
+
+
+
+/* Arrow 114 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 665px;
+height: 0px;
+left: 720px;
+top: 12500px;
+
+border: 2px solid #FF0000;
+
+
+/* Arrow 115 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 665px;
+height: 0px;
+left: 720px;
+top: 12500px;
+
+border: 2px solid #FF0000;
+
+
+/* Arrow 116 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 499px;
+height: 0px;
+left: 655px;
+top: 12647px;
+
+border: 2px solid #FF0000;
+
+
+/* Arrow 120 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 1041px;
+height: 0px;
+left: 2461px;
+top: 12943px;
+
+border: 2px solid #FF0000;
+transform: rotate(90deg);
+
+
+/* Arrow 117 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 283px;
+height: 0px;
+left: 3778px;
+top: 12863px;
+
+border: 2px solid #FF0000;
+transform: rotate(180deg);
+
+
+/* Arrow 118 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 283px;
+height: 0px;
+left: 3998px;
+top: 13595px;
+
+border: 2px solid #FF0000;
+transform: rotate(180deg);
+
+
+/* Arrow 119 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 283px;
+height: 0px;
+left: 3998px;
+top: 13693px;
+
+border: 2px solid #FF0000;
+transform: rotate(180deg);
+
+
+/* Arrow 122 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 283px;
+height: 0px;
+left: 3998px;
+top: 13882px;
+
+border: 2px solid #FF0000;
+transform: rotate(180deg);
+
+
+/* Задание добавлено/принято */
+
+position: relative;
+width: 1366px;
+height: 768px;
+left: 2632px;
+top: 13304px;
+
+
+
+/* Arrow 121 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 171px;
+height: 0px;
+left: 2461px;
+top: 13984px;
+
+border: 2px solid #FF0000;
+
+
+/* Frame 2136141878 */
+
+position: relative;
+width: 1193px;
+height: 221px;
+left: 3346px;
+top: 1801px;
+
+
+
+/* Line 254 */
+
+position: absolute;
+width: 390px;
+height: 0px;
+left: 2243px;
+top: 12943px;
+
+border: 2px solid #FF0000;
+
+
+/* Маркет */
+
+position: relative;
+width: 1366px;
+height: 768px;
+left: 877px;
+top: 13396px;
+
+
+
+/* Маркет */
+
+position: relative;
+width: 1366px;
+height: 768px;
+left: 877px;
+top: 14379px;
+
+
+
+/* Arrow 123 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 410px;
+height: 0px;
+left: 720px;
+top: 13529px;
+
+border: 2px solid #FF0000;
+
+
+/* Arrow 124 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 410px;
+height: 0px;
+left: 720px;
+top: 13776px;
+
+border: 2px solid #FF0000;
+
+
+/* Arrow 125 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 410px;
+height: 0px;
+left: 720px;
+top: 13991px;
+
+border: 2px solid #FF0000;
+
+
+/* Arrow 149 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 304px;
+height: 0px;
+left: 567px;
+top: 14655px;
+
+border: 2px solid #FF0000;
+
+
+/* Arrow 126 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 410px;
+height: 0px;
+left: 720px;
+top: 13881px;
+
+border: 2px solid #FF0000;
+
+
+/* Frame 2136141858 */
+
+position: relative;
+width: 1366px;
+height: 768px;
+left: 877px;
+top: 15454px;
+
+
+
+/* Arrow 128 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 916px;
+height: 0px;
+left: 738px;
+top: 16073px;
+
+border: 2px solid #FF0000;
+
+
+/* Arrow 150 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 176px;
+height: 0px;
+left: 738px;
+top: 15662px;
+
+border: 2px solid #FF0000;
+
+
+/* Arrow 151 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 1138px;
+height: 0px;
+left: 743px;
+top: 15846px;
+
+border: 2px solid #FF0000;
+
+
+/* Поп-ап  недоступного подарка */
+
+position: relative;
+width: 1366px;
+height: 768px;
+left: 2632px;
+top: 15454px;
+
+
+
+/* Поп-ап  недоступного подарка */
+
+position: relative;
+width: 1366px;
+height: 768px;
+left: 2632px;
+top: 16371px;
+
+
+
+/* Банк заданий */
+
+position: relative;
+width: 1366px;
+height: 768px;
+left: 877px;
+top: 11253px;
+
+
+
+/* Arrow 129 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 619px;
+height: 0px;
+left: 697px;
+top: 11732px;
+
+border: 2px solid #FF0000;
+
+
+/* Arrow 131 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 480px;
+height: 0px;
+left: 3654px;
+top: 16067px;
+
+border: 2px solid #FF0000;
+transform: rotate(180deg);
+
+
+/* Arrow 132 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 868px;
+height: 0px;
+left: 4246px;
+top: 16111px;
+
+border: 2px solid #FF0000;
+transform: rotate(90deg);
+
+
+/* Arrow 133 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 592px;
+height: 0px;
+left: 3654px;
+top: 16979px;
+
+border: 2px solid #FF0000;
+transform: rotate(180deg);
+
+
+/* Поп-ап  доступного подарка */
+
+position: relative;
+width: 1366px;
+height: 768px;
+left: 880px;
+top: 16371px;
+
+
+
+/* Frame 2136141863 */
+
+position: relative;
+width: 278px;
+height: 64px;
+left: 100px;
+top: 16781px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141882 */
+
+position: relative;
+width: 278px;
+height: 82px;
+left: 100px;
+top: 17672px;
+
+background: #FFFFFF;
+
+
+/* Arrow 134 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 916px;
+height: 0px;
+left: 378px;
+top: 16841px;
+
+border: 2px solid #FF0000;
+
+
+/* Запрос отправлен */
+
+position: relative;
+width: 1366px;
+height: 768px;
+left: 877px;
+top: 17288px;
+
+
+
+/* Нет подарков в выбранных категориях( */
+
+position: absolute;
+width: 728px;
+height: 181px;
+left: 1196px;
+top: 14763px;
+
+font-family: 'SF Pro Text';
+font-style: normal;
+font-weight: 400;
+font-size: 36px;
+line-height: 22px;
+/* or 61% */
+
+color: #B6B4B4;
+
+
+
+/* Профиль */
+
+position: relative;
+width: 1366px;
+height: 768px;
+left: 877px;
+top: 18182px;
+
+
+
+/* Профиль */
+
+position: relative;
+width: 1366px;
+height: 768px;
+left: 862px;
+top: 19076px;
+
+
+
+/* Frame 2136141864 */
+
+position: relative;
+width: 278px;
+height: 64px;
+left: 104px;
+top: 18582px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141874 */
+
+position: relative;
+width: 278px;
+height: 64px;
+left: 104px;
+top: 18778px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141876 */
+
+position: relative;
+width: 278px;
+height: 64px;
+left: 251px;
+top: 19460px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141877 */
+
+position: relative;
+width: 278px;
+height: 64px;
+left: 2318px;
+top: 19476px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141875 */
+
+position: relative;
+width: 278px;
+height: 64px;
+left: 2437px;
+top: 18675px;
+
+background: #FFFFFF;
+
+
+/* Frame 2136141883 */
+
+position: relative;
+width: 278px;
+height: 202px;
+left: 2437px;
+top: 18420px;
+
+background: #FFFFFF;
+
+
+/* Arrow 135 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 743px;
+height: 0px;
+left: 382px;
+top: 18642px;
+
+border: 2px solid #FF0000;
+
+
+/* Arrow 144 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 743px;
+height: 0px;
+left: 382px;
+top: 18838px;
+
+border: 2px solid #FF0000;
+
+
+/* Arrow 146 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 743px;
+height: 0px;
+left: 529px;
+top: 19520px;
+
+border: 2px solid #FF0000;
+
+
+/* Arrow 145 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 443px;
+height: 0px;
+left: 1994px;
+top: 18707px;
+
+border: 2px solid #FF0000;
+transform: rotate(180deg);
+
+
+/* Arrow 154 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 437px;
+height: 0px;
+left: 1994px;
+top: 18546px;
+
+border: 2px solid #FF0000;
+transform: rotate(180deg);
+
+
+/* Arrow 147 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 498px;
+height: 0px;
+left: 1820px;
+top: 19517px;
+
+border: 2px solid #FF0000;
+transform: rotate(180deg);
+
+
+/* Arrow 101 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 52px;
+height: 0px;
+left: 3167px;
+top: 8631px;
+
+border: 2px solid #FF0000;
+transform: rotate(90deg);
+
+
+/* Arrow 152 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 1285px;
+height: 81px;
+left: 1625px;
+top: 16314px;
+
+border: 2px solid #FF0000;
+transform: rotate(90deg);
+
+
+/* Arrow 153 */
+
+box-sizing: border-box;
+
+position: absolute;
+width: 776px;
+height: 0px;
+left: 378px;
+top: 17732px;
+
+border: 2px solid #FF0000;`;
+
+    // Initialize
+    function initialRender() {
+      specInput.value = defaultSpec;
+      const blocks = parseBlocks(defaultSpec);
+      renderBlocks(blocks);
+      setZoom(parseFloat(zoomInput.value));
+      // Center the initial view around the first content
+      stageWrap.scrollTo({ left: 600, top: 200, behavior: 'instant' });
+    }
+
+    window.addEventListener('load', initialRender);
+  </script>
+</body>
+</html>
