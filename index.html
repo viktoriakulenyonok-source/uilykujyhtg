@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Образовательная платформа</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=SF+Pro+Text:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Navigation -->
+        <nav class="main-nav">
+            <div class="nav-container">
+                <h1 class="logo">Образовательная платформа</h1>
+                <ul class="nav-links">
+                    <li><a href="#auth" class="nav-link active">Авторизация</a></li>
+                    <li><a href="#task-bank" class="nav-link">Банк заданий</a></li>
+                    <li><a href="#my-tasks" class="nav-link">Мои задания</a></li>
+                    <li><a href="#market" class="nav-link">Маркет</a></li>
+                    <li><a href="#profile" class="nav-link">Профиль</a></li>
+                </ul>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Authorization Screen -->
+            <section id="auth" class="screen active">
+                <div class="screen-container">
+                    <h2>Авторизация</h2>
+                    <div class="auth-form">
+                        <input type="text" placeholder="Логин" class="input-field">
+                        <input type="password" placeholder="Пароль" class="input-field">
+                        <button class="btn-primary">Войти</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Task Bank Screen -->
+            <section id="task-bank" class="screen">
+                <div class="screen-container">
+                    <h2>Банк заданий</h2>
+                    <div class="task-grid">
+                        <div class="task-card">
+                            <h3>Математика</h3>
+                            <p>Доступно заданий: 25</p>
+                            <button class="btn-secondary">Выбрать</button>
+                        </div>
+                        <div class="task-card">
+                            <h3>Физика</h3>
+                            <p>Доступно заданий: 18</p>
+                            <button class="btn-secondary">Выбрать</button>
+                        </div>
+                        <div class="task-card">
+                            <h3>Химия</h3>
+                            <p>Доступно заданий: 12</p>
+                            <button class="btn-secondary">Выбрать</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- My Tasks Screen -->
+            <section id="my-tasks" class="screen">
+                <div class="screen-container">
+                    <h2>Мои задания</h2>
+                    <div class="task-list">
+                        <div class="assignment-card">
+                            <h3>Задание по алгебре</h3>
+                            <p class="status pending">В процессе</p>
+                            <div class="task-actions">
+                                <button class="btn-primary">Продолжить</button>
+                                <button class="btn-danger">Отказаться</button>
+                            </div>
+                        </div>
+                        <div class="assignment-card">
+                            <h3>Задание по геометрии</h3>
+                            <p class="status completed">Выполнено</p>
+                            <div class="task-actions">
+                                <button class="btn-secondary">Просмотреть</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Market Screen -->
+            <section id="market" class="screen">
+                <div class="screen-container">
+                    <h2>Маркет</h2>
+                    <div class="market-grid">
+                        <div class="gift-card available">
+                            <h3>Подарочная карта</h3>
+                            <p class="price">100 баллов</p>
+                            <button class="btn-primary">Получить</button>
+                        </div>
+                        <div class="gift-card unavailable">
+                            <h3>Премиум подписка</h3>
+                            <p class="price">500 баллов</p>
+                            <button class="btn-disabled" disabled>Недоступно</button>
+                        </div>
+                    </div>
+                    <div class="empty-state">
+                        <p>Нет подарков в выбранных категориях</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Profile Screen -->
+            <section id="profile" class="screen">
+                <div class="screen-container">
+                    <h2>Профиль</h2>
+                    <div class="profile-info">
+                        <div class="avatar">
+                            <img src="https://via.placeholder.com/100" alt="Avatar">
+                        </div>
+                        <div class="user-details">
+                            <h3>Иван Иванов</h3>
+                            <p>Студент</p>
+                            <p class="points">Баллы: 250</p>
+                        </div>
+                    </div>
+                    <div class="profile-actions">
+                        <button class="btn-secondary">Редактировать профиль</button>
+                        <button class="btn-secondary">Настройки</button>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Modals -->
+        <div id="modal-overlay" class="modal-overlay">
+            <div class="modal">
+                <div class="modal-header">
+                    <h3 id="modal-title">Заголовок</h3>
+                    <button class="modal-close">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <p id="modal-content">Содержимое модального окна</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-secondary" id="modal-cancel">Отмена</button>
+                    <button class="btn-primary" id="modal-confirm">Подтвердить</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Theme Toggle Button -->
+        <button class="theme-toggle" onclick="toggleTheme()" title="Переключить тему">
+            🌙
+        </button>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
