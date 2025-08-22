@@ -1,0 +1,190 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+  
+  body {
+    font-family: 'Inter', 'SF Pro Text', system-ui, sans-serif;
+    margin: 0;
+    padding: 0;
+    background-color: #f9fafb;
+  }
+}
+
+@layer components {
+  .frame {
+    @apply relative bg-white rounded-lg shadow-sm border border-gray-200;
+  }
+  
+  .frame-268 {
+    @apply w-[268px] h-[126px];
+  }
+  
+  .frame-268-43 {
+    @apply w-[268px] h-[43px];
+  }
+  
+  .frame-268-60 {
+    @apply w-[268px] h-[60px];
+  }
+  
+  .frame-268-55 {
+    @apply w-[268px] h-[55px];
+  }
+  
+  .frame-279-56 {
+    @apply w-[279px] h-[56px];
+  }
+  
+  .frame-274-227 {
+    @apply w-[274px] h-[227px];
+  }
+  
+  .frame-268-48 {
+    @apply w-[268px] h-[48px];
+  }
+  
+  .frame-268-57 {
+    @apply w-[268px] h-[57px];
+  }
+  
+  .frame-268-116 {
+    @apply w-[268px] h-[116px];
+  }
+  
+  .frame-268-74 {
+    @apply w-[268px] h-[74px];
+  }
+  
+  .frame-268-88 {
+    @apply w-[268px] h-[88px];
+  }
+  
+  .frame-268-127 {
+    @apply w-[268px] h-[127px];
+  }
+  
+  .frame-268-352 {
+    @apply w-[268px] h-[352px];
+  }
+  
+  .frame-268-117 {
+    @apply w-[268px] h-[117px];
+  }
+  
+  .frame-241-130 {
+    @apply w-[241px] h-[130px];
+  }
+  
+  .frame-241-79 {
+    @apply w-[241px] h-[79px];
+  }
+  
+  .frame-268-86 {
+    @apply w-[268px] h-[86px];
+  }
+  
+  .frame-241-351 {
+    @apply w-[241px] h-[351px];
+  }
+  
+  .frame-241-40 {
+    @apply w-[241px] h-[40px];
+  }
+  
+  .frame-259-64 {
+    @apply w-[259px] h-[64px];
+  }
+  
+  .frame-278-64 {
+    @apply w-[278px] h-[64px];
+  }
+  
+  .frame-278-342 {
+    @apply w-[278px] h-[342px];
+  }
+  
+  .frame-278-90 {
+    @apply w-[278px] h-[90px];
+  }
+  
+  .frame-206-66 {
+    @apply w-[206px] h-[66px];
+  }
+  
+  .frame-213-64 {
+    @apply w-[213px] h-[64px];
+  }
+  
+  .frame-206-118 {
+    @apply w-[206px] h-[118px];
+  }
+  
+  .frame-278-82 {
+    @apply w-[278px] h-[82px];
+  }
+  
+  .frame-278-202 {
+    @apply w-[278px] h-[202px];
+  }
+  
+  .arrow {
+    @apply absolute border-2 border-red-500;
+  }
+  
+  .arrow-horizontal {
+    @apply arrow h-0;
+  }
+  
+  .arrow-vertical {
+    @apply arrow w-0;
+  }
+  
+  .screen {
+    @apply relative w-[1366px] h-[768px] max-w-full;
+  }
+  
+  .screen-1082 {
+    @apply relative w-[1366px] h-[1082px] max-w-full;
+  }
+  
+  .screen-1172 {
+    @apply relative w-[1366px] h-[1172px] max-w-full;
+  }
+  
+  .screen-1320 {
+    @apply relative w-[1366px] h-[1320px] max-w-full;
+  }
+  
+  .screen-314 {
+    @apply relative w-[1366px] h-[314px] max-w-full;
+  }
+  
+  .screen-610 {
+    @apply relative w-[1366px] h-[610px] max-w-full;
+  }
+  
+  .screen-221 {
+    @apply relative w-[1193px] h-[221px] max-w-full;
+  }
+  
+  .btn-primary {
+    @apply bg-primary-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-primary-700 transition-colors;
+  }
+  
+  .btn-secondary {
+    @apply bg-gray-200 text-gray-800 px-6 py-3 rounded-lg font-medium hover:bg-gray-300 transition-colors;
+  }
+  
+  .input-field {
+    @apply w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent;
+  }
+  
+  .card {
+    @apply bg-white rounded-lg shadow-sm border border-gray-200 p-6;
+  }
+}
